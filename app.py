@@ -5,7 +5,19 @@ import hashlib
 import copy
 import time
 
-from logic import WorkplaceOptimizer
+# 尝试导入 logic 模块中的版本号，如果 logic.py 里没有定义 VERSION，则使用默认值
+try:
+    from logic import WorkplaceOptimizer
+    from logic import VERSION as LOGIC_VERSION
+except ImportError:
+    from logic import WorkplaceOptimizer
+
+    LOGIC_VERSION = "1.0.0"
+
+# ==========================================
+# 版本控制配置
+# ==========================================
+APP_VERSION = "1.1.0"  # 在此处修改前端 App 版本号
 
 # ==========================================
 # 0. 样式与配置
@@ -168,6 +180,22 @@ else:
         st.caption(f"配置: {st.session_state.user_conf.get('desc', 'Custom')}")
 
         st.divider()
+
+        # --- 新增：版本信息显示 ---
+        st.markdown(f"""
+        <div style="
+            display: flex; 
+            justify-content: space-between; 
+            color: #666; 
+            font-size: 0.8rem;
+            margin-bottom: 10px;
+        ">
+            <span>App: v{APP_VERSION}</span>
+            <span>Logic: v{LOGIC_VERSION}</span>
+        </div>
+        """, unsafe_allow_html=True)
+        # ------------------------
+
         if st.button("退出登录", use_container_width=True):
             st.session_state.clear()
             st.rerun()
