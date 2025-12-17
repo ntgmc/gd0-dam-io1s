@@ -308,6 +308,74 @@ footer {visibility: hidden;}
 div.stButton > button:first-child {
     font-weight: bold;
 }
+
+.op-card {
+    background-color: #262730;
+    border: 1px solid #363945;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    transition: all 0.2s;
+}
+.op-card:hover {
+    border-color: #555;
+    background-color: #2b2c35;
+}
+
+/* 基础 Badge 样式 */
+.eff-badge {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.9em;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+/* > 20%: 传说金 (六星色) */
+.eff-badge-legendary {
+    background-color: rgba(255, 170, 0, 0.15);
+    color: #FFD700;
+    border: 1px solid rgba(255, 170, 0, 0.3);
+    box-shadow: 0 0 5px rgba(255, 170, 0, 0.1);
+}
+
+/* > 10%: 史诗紫 (或者可以用翠绿色) - 这里选紫色更有高级感 */
+.eff-badge-epic {
+    background-color: rgba(187, 134, 252, 0.15);
+    color: #BB86FC;
+    border: 1px solid rgba(187, 134, 252, 0.3);
+}
+/* 如果你更喜欢绿色（代表纯粹的涨幅），可以用下面这个替换上面的 purple：
+.eff-badge-epic {
+    background-color: rgba(0, 230, 118, 0.15);
+    color: #00E676;
+    border: 1px solid rgba(0, 230, 118, 0.3);
+}
+*/
+
+/* < 10%: 稀有蓝 (干练、冷静) */
+.eff-badge-rare {
+    background-color: rgba(64, 196, 255, 0.15);
+    color: #40C4FF;
+    border: 1px solid rgba(64, 196, 255, 0.3);
+}
+
+.op-name {
+    font-weight: bold;
+    font-size: 1.1em;
+    color: #eee;
+    margin-left: 10px;
+}
+.op-desc {
+    font-size: 0.85em;
+    color: #a0a0a0;
+    margin-left: 10px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -667,39 +735,50 @@ else:
                 desc_text = f"当前: 精{item['current']}  ➜  目标: 精{item['target']}"
                 key_suffix = str(real_id)
 
-            # 效率颜色区分：超过 20% 显示金色，否则红色
-            badge_class = "eff-badge eff-badge-high" if gain_val >= 20 else "eff-badge"
+                # --- 颜色与文案逻辑优化 ---
+                if gain_val >= 20.0:
+                    # 极大提升
+                    badge_class = "eff-badge eff-badge-legendary"
+                    icon_str = "🔥"  # 火热/强力
+                    gain_text = f"UP +{gain_val:.1f}%"
+                elif gain_val >= 10.0:
+                    # 显著提升
+                    badge_class = "eff-badge eff-badge-epic"
+                    icon_str = "✨"  # 闪亮
+                    gain_text = f"+{gain_val:.1f}%"
+                else:
+                    # 普通提升
+                    badge_class = "eff-badge eff-badge-rare"
+                    icon_str = "📈"  # 上升趋势
+                    gain_text = f"+{gain_val:.1f}%"
 
-            # 使用 container 模拟卡片
-            # 注意：在 Form 里无法使用复杂的嵌套 columns 布局而不破坏 checkbox 对齐
-            # 这里的方案是：Checkbox 在左，右侧使用 HTML 渲染详情
+                # 渲染卡片 HTML
+                c1, c2 = st.columns([0.1, 0.9])
+                with c1:
+                    st.write("")
+                    st.write("")
+                    unique_key = f"chk_{st.session_state.list_version}_{idx}_{key_suffix}"
+                    # 默认值: 效率大于5%的默认勾选，方便用户
+                    default_check = True if gain_val >= 5.0 else False
+                    is_checked = st.checkbox("选择", value=default_check, key=unique_key, label_visibility="collapsed")
+                    if is_checked:
+                        selected_indices_in_processed.append(idx)
 
-            c1, c2 = st.columns([0.1, 0.9])
-            with c1:
-                # 垂直居中稍微难一点，这里简单处理
-                st.write("")
-                st.write("")
-                # 唯一的 Key，结合版本号防止状态混淆
-                unique_key = f"chk_{st.session_state.list_version}_{idx}_{key_suffix}"
-                is_checked = st.checkbox("选择", key=unique_key, label_visibility="collapsed")
-                if is_checked:
-                    selected_indices_in_processed.append(idx)
-
-            with c2:
-                st.markdown(f"""
-                <div class="op-card">
-                    <div style="display:flex; align-items:center; flex-grow:1;">
-                        {avatars_html}
-                        <div style="display:flex; flex-direction:column;">
-                            <span class="op-name">{display_name}</span>
-                            <span class="op-desc">{desc_text}</span>
-                        </div>
-                    </div>
-                    <div class="{badge_class}">
-                        +{gain_val:.2f}% 效率
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                with c2:
+                    st.markdown(f"""
+                            <div class="op-card">
+                                <div style="display:flex; align-items:center; flex-grow:1;">
+                                    {avatars_html}
+                                    <div style="display:flex; flex-direction:column;">
+                                        <span class="op-name">{display_name}</span>
+                                        <span class="op-desc">{desc_text}</span>
+                                    </div>
+                                </div>
+                                <div class="{badge_class}">
+                                    {icon_str} {gain_text}
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
 
         st.markdown("---")
 
