@@ -255,74 +255,211 @@ else:
                 )
             st.caption("注：此文件包含您刚才勾选并应用的练度修改。")
 
-    # 3. 练度建议交互区
+    # ==========================================
+    # 优化后的：3. 练度建议交互区
+    # ==========================================
     st.markdown("### 🛠️ 练度优化建议")
 
+
+    # --- 辅助函数：获取头像 URL ---
+    def get_avatar_url(char_id):
+        # 使用 Aceship 的 GitHub 资源库，需要标准 char_id (如 char_102_texas)
+        # 如果你的 id 是纯数字或其他格式，这里可能需要调整，或者使用 prts.wiki
+        return f"https://raw.githubusercontent.com/Aceship/Arknight-Images/main/avatars/{char_id}.png"
+
+
+    # --- 辅助函数：数据去重与排序 ---
+    def process_suggestions(suggestions):
+        seen = set()
+        unique_list = []
+        # 按效率提升降序排列
+        sorted_sugg = sorted(suggestions, key=lambda x: x['gain'], reverse=True)
+
+        for item in sorted_sugg:
+            # 生成一个唯一标识符用于去重
+            if item.get('type') == 'bundle':
+                # 对于组合，使用所有干员ID的组合作为唯一键
+                uid = "bundle_" + "_".join(sorted([str(o['id']) for o in item['ops']]))
+            else:
+                uid = f"single_{item['id']}"
+
+            if uid not in seen:
+                seen.add(uid)
+                unique_list.append(item)
+        return unique_list
+
+
+    # 处理数据
     if not st.session_state.suggestions:
         st.info("✨ 当前练度已满足该配置的理论最优解，无需额外提升。")
-        # 即使没有建议，也提供生成按钮，用于生成当前练度的排班
-        st.session_state.suggestions = []
+        processed_suggestions = []
     else:
-        st.write(f"检测到 **{len(st.session_state.suggestions)}** 项可提升效率的优化点：")
+        processed_suggestions = process_suggestions(st.session_state.suggestions)
+        st.write(f"检测到 **{len(processed_suggestions)}** 项可提升效率的优化点：")
 
-    # 表单区域
+    # --- 样式优化 ---
+    st.markdown("""
+    <style>
+    .op-card {
+        background-color: #262730; /* 适配暗色模式，如果是亮色模式需改为 #f0f2f6 */
+        border: 1px solid #464b59;
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+    }
+    .eff-badge {
+        background-color: rgba(255, 75, 75, 0.2);
+        color: #ff4b4b;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-weight: bold;
+        font-size: 0.9em;
+        white-space: nowrap;
+    }
+    .eff-badge-high {
+        background-color: rgba(255, 215, 0, 0.2);
+        color: #ffd700;
+    }
+    .op-name {
+        font-weight: bold;
+        font-size: 1.1em;
+        margin-left: 10px;
+    }
+    .op-desc {
+        font-size: 0.85em;
+        color: #a0a0a0;
+        margin-left: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # --- 表单区域 ---
     with st.form("upgrade_form"):
-        selected_indices = []
+        # 全选控制逻辑
+        # 使用 session_state 来控制全选状态稍微复杂，这里用简单的列头Checkbox作为全选不太容易实现联动
+        # 替代方案：默认全部勾选，或者提供两个按钮在表单外控制（Streamlit限制）
+        # 这里采用：顶部加一个说明，默认不勾选，或者用户手动勾选。
+        # 为了体验，通常建议**默认全选**或提供**全选按钮**。
+        # 由于Streamlit Form机制，我们在Form内部很难做动态的全选/反选交互。
+        # 折中方案：默认全部 False，用户自己勾。
 
-        # 如果有建议，渲染多选框
-        if st.session_state.suggestions:
-            cols = st.columns(2)
-            for idx, item in enumerate(st.session_state.suggestions):
-                col = cols[idx % 2]
-                gain_val = item['gain']
+        # Grid 布局
+        cols = st.columns(1)  # 手机端友好，单列布局
 
-                if item.get('type') == 'bundle':
-                    op_names = "+".join([o['name'] for o in item['ops']])
-                    label = f"**{op_names}** (效率 +{gain_val:.2f}%)"
-                    help_txt = "\n".join([f"{o['name']}: 精{o['current']} -> 精{o['target']}" for o in item['ops']])
-                else:
-                    label = f"**{item['name']}** (效率 +{gain_val:.2f}%)"
-                    help_txt = f"当前: 精{item['current']} -> 目标: 精{item['target']}"
+        selected_indices_in_processed = []
 
-                if col.checkbox(label, key=f"s_{idx}", help=help_txt):
-                    selected_indices.append(idx)
-            # [修改] key 增加了 list_version 前缀
-            # 这样当版本号变化时，Streamlit 会认为这是一组全新的组件，默认状态为 False
-            unique_key = f"s_v{st.session_state.list_version}_{idx}"
+        # 遍历渲染列表
+        for idx, item in enumerate(processed_suggestions):
+            # 获取数据
+            gain_val = item['gain']
+            is_bundle = item.get('type') == 'bundle'
 
-            if col.checkbox(label, key=unique_key, help=help_txt):
-                selected_indices.append(idx)
+            # 准备显示的 HTML 内容
+            if is_bundle:
+                # 组合建议
+                ops_info = item['ops']
+                # 获取头像 (仅展示前2个，避免过多)
+                avatars_html = ""
+                names_text = []
+                details_text = []
+                ids_for_key = []
+
+                for o in ops_info:
+                    url = get_avatar_url(o.get('id'))
+                    avatars_html += f'<img src="{url}" style="width: 40px; height: 40px; border-radius: 4px; margin-right: 5px;">'
+                    names_text.append(o['name'])
+                    details_text.append(f"{o['name']}: 精{o['current']}→{o['target']}")
+                    ids_for_key.append(str(o.get('id')))
+
+                display_name = " + ".join(names_text)
+                desc_text = " | ".join(details_text)
+                key_suffix = "_".join(ids_for_key)
+            else:
+                # 单人建议
+                url = get_avatar_url(item.get('id'))
+                avatars_html = f'<img src="{url}" style="width: 45px; height: 45px; border-radius: 4px;">'
+                display_name = item['name']
+                desc_text = f"当前: 精{item['current']}  ➜  目标: 精{item['target']}"
+                key_suffix = str(item.get('id'))
+
+            # 效率颜色区分：超过 20% 显示金色，否则红色
+            badge_class = "eff-badge eff-badge-high" if gain_val >= 20 else "eff-badge"
+
+            # 使用 container 模拟卡片
+            # 注意：在 Form 里无法使用复杂的嵌套 columns 布局而不破坏 checkbox 对齐
+            # 这里的方案是：Checkbox 在左，右侧使用 HTML 渲染详情
+
+            c1, c2 = st.columns([0.1, 0.9])
+            with c1:
+                # 垂直居中稍微难一点，这里简单处理
+                st.write("")
+                st.write("")
+                # 唯一的 Key，结合版本号防止状态混淆
+                unique_key = f"chk_{st.session_state.list_version}_{idx}_{key_suffix}"
+                is_checked = st.checkbox("选择", key=unique_key, label_visibility="collapsed")
+                if is_checked:
+                    selected_indices_in_processed.append(idx)
+
+            with c2:
+                st.markdown(f"""
+                <div class="op-card">
+                    <div style="display:flex; align-items:center; flex-grow:1;">
+                        {avatars_html}
+                        <div style="display:flex; flex-direction:column;">
+                            <span class="op-name">{display_name}</span>
+                            <span class="op-desc">{desc_text}</span>
+                        </div>
+                    </div>
+                    <div class="{badge_class}">
+                        +{gain_val:.2f}% 效率
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
         st.markdown("---")
-        # 按钮：生成
-        generate_btn = st.form_submit_button("🚀 应用选中修改并生成排班", type="primary", use_container_width=True)
 
-    # 4. 处理生成逻辑
-    if generate_btn:
+        # 操作按钮
+        c_btn1, c_btn2 = st.columns([3, 1])
+        with c_btn1:
+            submit_btn = st.form_submit_button("🚀 应用选中修改并生成排班", type="primary", use_container_width=True)
+        with c_btn2:
+            st.caption(f"已选中: {len(selected_indices_in_processed)} 项")
+
+    # ==========================================
+    # 4. 处理生成逻辑 (适配新的去重列表)
+    # ==========================================
+    if submit_btn:
         with st.spinner("正在写入数据并重新演算..."):
             # A. 复制当前数据
             new_ops_data = copy.deepcopy(st.session_state.user_ops)
             modified_names = []
 
-            # B. 应用勾选的修改
-            for idx in selected_indices:
-                item = st.session_state.suggestions[idx]
+            # B. 应用勾选的修改 (注意：这里要用 processed_suggestions)
+            for idx in selected_indices_in_processed:
+                item = processed_suggestions[idx]  # <--- 使用去重后的列表
+
                 if item.get('type') == 'bundle':
                     for o in item['ops']:
-                        suc, name = upgrade_operator_in_memory(new_ops_data, o.get('id'), o.get('name'), o['target'])
+                        suc, name = upgrade_operator_in_memory(new_ops_data, o.get('id'), o.get('name'),
+                                                               o['target'])
                         if suc: modified_names.append(name)
                 else:
                     suc, name = upgrade_operator_in_memory(new_ops_data, item.get('id'), item.get('name'),
                                                            item['target'])
                     if suc: modified_names.append(name)
 
-            # C. 保存到硬盘 (持久化)
+            # ... (后续代码保持不变，直到 st.rerun()) ...
+
+            # --- 以下代码直接接你原有的 C, D, E 步骤 ---
+            # C. 保存到硬盘
             if modified_names:
                 save_success = save_user_data(st.session_state.user_hash, new_ops_data)
                 if not save_success:
                     st.error("保存数据失败，请联系管理员")
                     st.stop()
-                st.session_state.user_ops = new_ops_data  # 更新内存
+                st.session_state.user_ops = new_ops_data
 
             # D. 生成最终排班
             run_ops_path = f"run_ops_{st.session_state.user_hash}.json"
@@ -335,32 +472,26 @@ else:
                     json.dump(st.session_state.user_conf, f, ensure_ascii=False)
 
                 optimizer = WorkplaceOptimizer("internal", run_ops_path, run_conf_path)
-                final_res = optimizer.get_optimal_assignments(ignore_elite=False)  # 使用新练度计算
+                final_res = optimizer.get_optimal_assignments(ignore_elite=False)
 
-                # 提取结果
                 raw_res = final_res.get('raw_results', [])
                 st.session_state.final_eff = raw_res[0].total_efficiency if raw_res else 0
                 st.session_state.final_result_json = json.dumps(clean_data(final_res), ensure_ascii=False, indent=2)
 
-                # E. 状态更新与重载
                 st.session_state.final_result_ready = True
                 st.session_state.analysis_done = False
                 st.session_state.suggestions = []
 
-                # [新增] 只有当发生了实际修改时，才更新版本号
-                # 这样下一轮渲染时，Checkbox 的 key 会变成 "s_v1_0", "s_v1_1"...
-                # 旧的 "s_v0_0" 状态会被丢弃
                 if modified_names:
                     st.session_state.list_version += 1
 
-                # 提示成功并重载页面
                 if modified_names:
                     st.toast(f"✅ 已更新 {len(modified_names)} 位干员练度！", icon="💾")
                 else:
                     st.toast("✅ 排班生成成功！", icon="📄")
 
-                time.sleep(0.5)  # 稍作停顿让 Toast 显示
-                st.rerun()  # <--- 自动刷新，替代 F5
+                time.sleep(0.5)
+                st.rerun()
 
             except Exception as e:
                 st.error(f"计算发生错误: {e}")
