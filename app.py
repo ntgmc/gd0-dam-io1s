@@ -1,3 +1,4 @@
+import base64
 import streamlit as st
 import json
 import os
@@ -17,7 +18,7 @@ except ImportError:
 # ==========================================
 # 版本控制配置
 # ==========================================
-APP_VERSION = "1.1.0"  # 在此处修改前端 App 版本号
+APP_VERSION = "2.0.0"  # 在此处修改前端 App 版本号
 
 # ==========================================
 # 本地资源配置
@@ -241,13 +242,8 @@ def get_avatar_base64(char_id):
     # 定义图片文件夹路径 (假设 webp96 文件夹在 app.py 同级目录下)
     img_folder = "webp96"
 
-    # 尝试的文件名 (优先 .webp，如果你确定全是 png 可以改)
-    # 通常 MAA/Arknights 资源包 webp96 文件夹里是 .webp
     file_path = os.path.join(img_folder, f"{char_id}.webp")
 
-    # 如果找不到，尝试 .png 作为备用
-    if not os.path.exists(file_path):
-        file_path = os.path.join(img_folder, f"{char_id}.png")
 
     if os.path.exists(file_path):
         try:
