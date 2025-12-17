@@ -267,25 +267,35 @@ else:
         # 如果你的 id 是纯数字或其他格式，这里可能需要调整，或者使用 prts.wiki
         return f"https://raw.githubusercontent.com/Aceship/Arknight-Images/main/avatars/{char_id}.png"
 
-
-    # --- 辅助函数：数据去重与排序 ---
+    # --- 辅助函数：数据去重与排序（修复版） ---
     def process_suggestions(suggestions):
         seen = set()
         unique_list = []
-        # 按效率提升降序排列
-        sorted_sugg = sorted(suggestions, key=lambda x: x['gain'], reverse=True)
+
+        # 安全排序：如果缺少 gain 字段，默认设为 0
+        sorted_sugg = sorted(suggestions, key=lambda x: x.get('gain', 0), reverse=True)
 
         for item in sorted_sugg:
-            # 生成一个唯一标识符用于去重
-            if item.get('type') == 'bundle':
-                # 对于组合，使用所有干员ID的组合作为唯一键
-                uid = "bundle_" + "_".join(sorted([str(o['id']) for o in item['ops']]))
-            else:
-                uid = f"single_{item['id']}"
+            try:
+                # 生成一个唯一标识符用于去重
+                if item.get('type') == 'bundle':
+                    # 安全获取 ops 列表
+                    ops = item.get('ops', [])
+                    # 修复点：使用 .get('id') 替代 ['id']，如果没id就用name兜底
+                    ids = [str(o.get('id', o.get('name', 'unknown'))) for o in ops]
+                    uid = "bundle_" + "_".join(sorted(ids))
+                else:
+                    # 单人建议：同理，优先取id，没有则取name
+                    ident = item.get('id', item.get('name', 'unknown'))
+                    uid = f"single_{ident}"
 
-            if uid not in seen:
-                seen.add(uid)
-                unique_list.append(item)
+                if uid not in seen:
+                    seen.add(uid)
+                    unique_list.append(item)
+            except Exception:
+                # 万一还有极其特殊的数据结构，跳过该条目防止崩盘
+                continue
+
         return unique_list
 
 
