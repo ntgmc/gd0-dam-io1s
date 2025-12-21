@@ -578,54 +578,17 @@ else:
             st.caption("注：此文件包含您刚才勾选并应用的练度修改。")
 
     # ==========================================
-    # 优化后的：3. 练度建议交互区
+    # 3. 练度优化建议 (优化后的交互逻辑)
     # ==========================================
     st.markdown("### 🛠️ 练度优化建议")
 
-
-    # --- 辅助函数：获取头像 URL ---
-    def get_avatar_url(char_id):
-        # 使用 Aceship 的 GitHub 资源库，需要标准 char_id (如 char_102_texas)
-        # 如果你的 id 是纯数字或其他格式，这里可能需要调整，或者使用 prts.wiki
-        return f"https://raw.githubusercontent.com/Aceship/Arknight-Images/main/avatars/{char_id}.png"
-
-    # --- 辅助函数：数据去重与排序（修复版 + 配合本地图库） ---
-    def process_suggestions(suggestions):
-        seen = set()
-        unique_list = []
-
-        # 安全排序
-        sorted_sugg = sorted(suggestions, key=lambda x: x.get('gain', 0), reverse=True)
-
-        for item in sorted_sugg:
-            try:
-                # 补全 ID 信息 (非常重要的一步)
-                if item.get('type') == 'bundle':
-                    for op in item.get('ops', []):
-                        if not op.get('id'):
-                            op['id'] = get_real_id(op)
-                else:
-                    if not item.get('id'):
-                        item['id'] = get_real_id(item)
-
-                # 生成唯一标识符
-                if item.get('type') == 'bundle':
-                    ops = item.get('ops', [])
-                    # 使用 get_real_id 确保万无一失
-                    ids = [str(o.get('id') or o.get('name')) for o in ops]
-                    uid = "bundle_" + "_".join(sorted(ids))
-                else:
-                    ident = item.get('id') or item.get('name')
-                    uid = f"single_{ident}"
-
-                if uid not in seen:
-                    seen.add(uid)
-                    unique_list.append(item)
-            except Exception:
-                continue
-
-        return unique_list
-
+    # 辅助说明
+    with st.expander("💡 操作指南", expanded=True):
+        st.markdown("""
+        1. **核对信息**：列表显示了提升哪些干员可以获得更高的基建产出。
+        2. **手动勾选**：请勾选您**已经在游戏中完成精进**、或**准备立即提升**的干员。
+        3. **生成排班**：点击最下方的按钮，系统将根据更新后的练度重新计算并为您生成最新的 `MAA` 排班 JSON 文件。
+        """)
 
     # 处理数据
     if not st.session_state.suggestions:
@@ -633,161 +596,106 @@ else:
         processed_suggestions = []
     else:
         processed_suggestions = process_suggestions(st.session_state.suggestions)
-        st.write(f"检测到 **{len(processed_suggestions)}** 项可提升效率的优化点：")
 
-    # --- 样式优化 ---
-    st.markdown("""
-    <style>
-    .op-card {
-        background-color: #262730; /* 适配暗色模式，如果是亮色模式需改为 #f0f2f6 */
-        border: 1px solid #464b59;
-        border-radius: 8px;
-        padding: 10px;
-        margin-bottom: 10px;
-        display: flex;
-        align-items: center;
-    }
-    .eff-badge {
-        background-color: rgba(255, 75, 75, 0.2);
-        color: #ff4b4b;
-        padding: 4px 8px;
-        border-radius: 4px;
-        font-weight: bold;
-        font-size: 0.9em;
-        white-space: nowrap;
-    }
-    .eff-badge-high {
-        background-color: rgba(255, 215, 0, 0.2);
-        color: #ffd700;
-    }
-    .op-name {
-        font-weight: bold;
-        font-size: 1.1em;
-        margin-left: 10px;
-    }
-    .op-desc {
-        font-size: 0.85em;
-        color: #a0a0a0;
-        margin-left: 10px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+        # --- 新增：快速勾选控制 ---
+        c_ctrl1, c_ctrl2, _ = st.columns([1, 1, 4])
+        if c_ctrl1.button("✅ 全选", use_container_width=True):
+            for idx in range(len(processed_suggestions)):
+                st.session_state[f"chk_state_{idx}"] = True
+            st.rerun()
+        if c_ctrl2.button("❌ 重置", use_container_width=True):
+            for idx in range(len(processed_suggestions)):
+                st.session_state[f"chk_state_{idx}"] = False
+            st.rerun()
 
-    # --- 表单区域 ---
-    with st.form("upgrade_form"):
-        # 全选控制逻辑
-        # 使用 session_state 来控制全选状态稍微复杂，这里用简单的列头Checkbox作为全选不太容易实现联动
-        # 替代方案：默认全部勾选，或者提供两个按钮在表单外控制（Streamlit限制）
-        # 这里采用：顶部加一个说明，默认不勾选，或者用户手动勾选。
-        # 为了体验，通常建议**默认全选**或提供**全选按钮**。
-        # 由于Streamlit Form机制，我们在Form内部很难做动态的全选/反选交互。
-        # 折中方案：默认全部 False，用户自己勾。
+        # --- 表单区域 ---
+        with st.form("upgrade_form"):
+            selected_indices_in_processed = []
 
-        # Grid 布局
-        cols = st.columns(1)  # 手机端友好，单列布局
+            for idx, item in enumerate(processed_suggestions):
+                gain_val = item['gain']
+                is_bundle = item.get('type') == 'bundle'
 
-        selected_indices_in_processed = []
-
-        # 遍历渲染列表
-        for idx, item in enumerate(processed_suggestions):
-            # 获取数据
-            gain_val = item['gain']
-            is_bundle = item.get('type') == 'bundle'
-
-            # 准备显示的 HTML 内容
-            if is_bundle:
-                # 组合建议
-                ops_info = item['ops']
-                avatars_html = ""
-                names_text = []
-                details_text = []
-                ids_for_key = []
-
-                for o in ops_info:
-                    # [修改] 使用本地 Base64 读取
-                    real_id = o.get('id')  # 在 process_suggestions 里已经补全了
-                    img_src = get_avatar_base64(real_id)
-
-                    if img_src:
-                        avatars_html += f'<img src="{img_src}" style="width: 40px; height: 40px; border-radius: 4px; margin-right: 5px; object-fit: cover;">'
-                    else:
-                        # 图片缺失时的文字占位
-                        avatars_html += f'<span style="display:inline-block; width:40px; text-align:center; font-size:10px; color:#aaa; border:1px solid #555; border-radius:4px; margin-right:5px;">{o["name"][:1]}</span>'
-
-                    names_text.append(o['name'])
-                    details_text.append(f"{o['name']}: 精{o['current']}→{o['target']}")
-                    ids_for_key.append(str(real_id))
-
-                display_name = " + ".join(names_text)
-                desc_text = " | ".join(details_text)
-                key_suffix = "_".join(ids_for_key)
-            else:
-                # 单人建议
-                real_id = item.get('id')
-                img_src = get_avatar_base64(real_id)
-
-                if img_src:
-                    avatars_html = f'<img src="{img_src}" style="width: 45px; height: 45px; border-radius: 4px; object-fit: cover;">'
-                else:
-                    avatars_html = f'<div style="width:45px; height:45px; background:#333; border-radius:4px; display:flex; align-items:center; justify-content:center; color:#aaa;">{item["name"][:1]}</div>'
-
-                display_name = item['name']
-                desc_text = f"当前: 精{item['current']}  ➜  目标: 精{item['target']}"
-                key_suffix = str(real_id)
-
-                # --- 颜色与文案逻辑优化 ---
+                # 颜色与文案逻辑 (统一抽取)
                 if gain_val >= 20.0:
-                    # 极大提升
-                    badge_class = "eff-badge eff-badge-legendary"
-                    icon_str = "🔥"  # 火热/强力
-                    gain_text = f"UP +{gain_val:.1f}%"
+                    badge_class, icon_str = "eff-badge-legendary", "🔥 极高提升"
                 elif gain_val >= 10.0:
-                    # 显著提升
-                    badge_class = "eff-badge eff-badge-epic"
-                    icon_str = "✨"  # 闪亮
-                    gain_text = f"+{gain_val:.1f}%"
+                    badge_class, icon_str = "eff-badge-epic", "✨ 显著提升"
                 else:
-                    # 普通提升
-                    badge_class = "eff-badge eff-badge-rare"
-                    icon_str = "📈"  # 上升趋势
-                    gain_text = f"+{gain_val:.1f}%"
+                    badge_class, icon_str = "eff-badge-rare", "📈 效率提升"
 
-                # 渲染卡片 HTML
-                c1, c2 = st.columns([0.1, 0.9])
-                with c1:
+                # 准备显示的渲染内容
+                if is_bundle:
+                    # 组合建议渲染
+                    ops_info = item['ops']
+                    avatars_html = ""
+                    names_text = [o['name'] for o in ops_info]
+                    details_text = [f"{o['name']}: 精{o['current']}→{o['target']}" for o in ops_info]
+                    key_suffix = "_".join([str(o.get('id', '')) for o in ops_info])
+
+                    for o in ops_info:
+                        img_src = get_avatar_base64(o.get('id'))
+                        if img_src:
+                            avatars_html += f'<img src="{img_src}" style="width: 35px; height: 35px; border-radius: 4px; margin-right: 2px; border: 1px solid #444;">'
+
+                    display_name = " + ".join(names_text)
+                    desc_text = " | ".join(details_text)
+                else:
+                    # 单人建议渲染
+                    real_id = item.get('id')
+                    img_src = get_avatar_base64(real_id)
+                    if img_src:
+                        avatars_html = f'<img src="{img_src}" style="width: 45px; height: 45px; border-radius: 4px; border: 1px solid #444;">'
+                    else:
+                        avatars_html = f'<div style="width:45px; height:45px; background:#333; border-radius:4px; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:12px;">{item["name"][:1]}</div>'
+
+                    display_name = item['name']
+                    desc_text = f"当前: 精{item['current']}  ➜  目标: 精{item['target']}"
+                    key_suffix = str(real_id)
+
+                # 渲染卡片行
+                row_cols = st.columns([0.08, 0.92])
+                with row_cols[0]:
+                    st.write("")  # 垂直居中对齐
                     st.write("")
-                    st.write("")
-                    unique_key = f"chk_{st.session_state.list_version}_{idx}_{key_suffix}"
-                    # 默认值: 效率大于5%的默认勾选，方便用户
-                    default_check = True if gain_val >= 5.0 else False
-                    is_checked = st.checkbox("选择", value=default_check, key=unique_key, label_visibility="collapsed")
+                    unique_key = f"chk_val_{idx}_{key_suffix}"
+                    # 使用 session_state 保持的状态，默认设为 False (取消全选)
+                    state_key = f"chk_state_{idx}"
+                    if state_key not in st.session_state:
+                        st.session_state[state_key] = False
+
+                    is_checked = st.checkbox("Pick", value=st.session_state[state_key], key=unique_key,
+                                             label_visibility="collapsed")
                     if is_checked:
                         selected_indices_in_processed.append(idx)
 
-                with c2:
+                with row_cols[1]:
                     st.markdown(f"""
-                            <div class="op-card">
-                                <div style="display:flex; align-items:center; flex-grow:1;">
-                                    {avatars_html}
-                                    <div style="display:flex; flex-direction:column;">
-                                        <span class="op-name">{display_name}</span>
-                                        <span class="op-desc">{desc_text}</span>
-                                    </div>
-                                </div>
-                                <div class="{badge_class}">
-                                    {icon_str} {gain_text}
+                        <div class="op-card">
+                            <div style="display:flex; align-items:center; flex-grow:1; overflow:hidden;">
+                                <div style="min-width: 50px;">{avatars_html}</div>
+                                <div style="display:flex; flex-direction:column; margin-left:10px; overflow:hidden;">
+                                    <span class="op-name" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{display_name}</span>
+                                    <span class="op-desc">{desc_text}</span>
                                 </div>
                             </div>
-                            """, unsafe_allow_html=True)
+                            <div class="eff-badge {badge_class}">
+                                {icon_str} +{gain_val:.1f}%
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
 
-        st.markdown("---")
+            st.write("")
+            st.warning("⚠️ 注意：点击下方按钮后，勾选的干员将在后台标记为“已升级”，并为您计算全新的排班 JSON。")
 
-        # 操作按钮
-        c_btn1, c_btn2 = st.columns([3, 1])
-        with c_btn1:
-            submit_btn = st.form_submit_button("🚀 应用选中修改并生成排班", type="primary", use_container_width=True)
-        with c_btn2:
-            st.caption(f"已选中: {len(selected_indices_in_processed)} 项")
+            # 操作按钮
+            c_btn1, c_btn2 = st.columns([3, 1])
+            with c_btn1:
+                submit_btn = st.form_submit_button("🚀 应用选中修改并生成排班", type="primary", use_container_width=True)
+            with c_btn2:
+                st.markdown(
+                    f"<div style='text-align:center; padding-top:10px; color:#aaa;'>已选 {len(selected_indices_in_processed)} 项</div>",
+                    unsafe_allow_html=True)
 
     # ==========================================
     # 4. 处理生成逻辑 (适配新的去重列表)
