@@ -776,71 +776,86 @@ else:
     # ==========================================
     # 4. 处理生成逻辑 (适配新的去重列表)
     # ==========================================
+    # --- 4. 提交区域 (修复 NameError) ---
+    st.divider()
+    sticky_cols = st.columns([3, 1])
+
+    with sticky_cols[1]:
+        # 实时显示已选数量
+        st.markdown(
+            f"<h4 style='text-align:right; color:#FF4B4B; margin-top:5px;'>已选 {len(selected_indices)} 项</h4>",
+            unsafe_allow_html=True)
+
+    with sticky_cols[0]:
+        # 将按钮点击状态赋值给 submit_btn 变量，修复下方的 NameError
+        submit_btn = st.button("🚀 确认修改并生成排班表", type="primary", use_container_width=True)
+
+    # --- 5. 处理生成逻辑 ---
     if submit_btn:
-        with st.spinner("正在写入数据并重新演算..."):
-            # A. 复制当前数据
-            new_ops_data = copy.deepcopy(st.session_state.user_ops)
-            modified_names = []
+        if not selected_indices:
+            st.warning("⚠️ 请至少勾选一个提升项后再生成。")
+        else:
+            with st.status("正在演算最终结果...", expanded=True) as status:
+                try:
+                    # A. 复制当前数据
+                    new_ops_data = copy.deepcopy(st.session_state.user_ops)
+                    modified_names = []
 
-            # B. 应用勾选的修改 (注意：这里要用 processed_suggestions)
-            for idx in selected_indices_in_processed:
-                item = processed_suggestions[idx]  # <--- 使用去重后的列表
+                    # B. 应用选中的修改
+                    for idx in selected_indices:
+                        item = processed_suggestions[idx]
+                        if item.get('type') == 'bundle':
+                            for o in item['ops']:
+                                suc, name = upgrade_operator_in_memory(
+                                    new_ops_data, o.get('id'), o.get('name'), o['target']
+                                )
+                                if suc: modified_names.append(name)
+                        else:
+                            suc, name = upgrade_operator_in_memory(
+                                new_ops_data, item.get('id'), item.get('name'), item['target']
+                            )
+                            if suc: modified_names.append(name)
 
-                if item.get('type') == 'bundle':
-                    for o in item['ops']:
-                        suc, name = upgrade_operator_in_memory(new_ops_data, o.get('id'), o.get('name'),
-                                                               o['target'])
-                        if suc: modified_names.append(name)
-                else:
-                    suc, name = upgrade_operator_in_memory(new_ops_data, item.get('id'), item.get('name'),
-                                                           item['target'])
-                    if suc: modified_names.append(name)
+                    # C. 保存到硬盘
+                    if modified_names:
+                        save_success = save_user_data(st.session_state.user_hash, new_ops_data)
+                        if not save_success:
+                            st.error("保存数据失败，请检查 user_data 文件夹权限")
+                            st.stop()
+                        st.session_state.user_ops = new_ops_data
 
-            # ... (后续代码保持不变，直到 st.rerun()) ...
+                    # D. 调用算法生成最终排班 JSON
+                    run_ops_path = f"run_ops_{st.session_state.user_hash}.json"
+                    run_conf_path = f"run_conf_{st.session_state.user_hash}.json"
 
-            # --- 以下代码直接接你原有的 C, D, E 步骤 ---
-            # C. 保存到硬盘
-            if modified_names:
-                save_success = save_user_data(st.session_state.user_hash, new_ops_data)
-                if not save_success:
-                    st.error("保存数据失败，请联系管理员")
-                    st.stop()
-                st.session_state.user_ops = new_ops_data
+                    with open(run_ops_path, "w", encoding='utf-8') as f:
+                        json.dump(new_ops_data, f, ensure_ascii=False)
+                    with open(run_conf_path, "w", encoding='utf-8') as f:
+                        json.dump(st.session_state.user_conf, f, ensure_ascii=False)
 
-            # D. 生成最终排班
-            run_ops_path = f"run_ops_{st.session_state.user_hash}.json"
-            run_conf_path = f"run_conf_{st.session_state.user_hash}.json"
+                    optimizer = WorkplaceOptimizer("internal", run_ops_path, run_conf_path)
+                    final_res = optimizer.get_optimal_assignments(ignore_elite=False)
 
-            try:
-                with open(run_ops_path, "w", encoding='utf-8') as f:
-                    json.dump(new_ops_data, f, ensure_ascii=False)
-                with open(run_conf_path, "w", encoding='utf-8') as f:
-                    json.dump(st.session_state.user_conf, f, ensure_ascii=False)
+                    # E. 更新状态
+                    raw_res = final_res.get('raw_results', [])
+                    st.session_state.final_eff = raw_res[0].total_efficiency if raw_res else 0
+                    st.session_state.final_result_json = json.dumps(clean_data(final_res), ensure_ascii=False,
+                                                                    indent=2)
 
-                optimizer = WorkplaceOptimizer("internal", run_ops_path, run_conf_path)
-                final_res = optimizer.get_optimal_assignments(ignore_elite=False)
+                    st.session_state.final_result_ready = True
+                    st.session_state.analysis_done = False  # 强制下次进入重新分析潜力
+                    st.session_state.list_version += 1  # 刷新列表状态
 
-                raw_res = final_res.get('raw_results', [])
-                st.session_state.final_eff = raw_res[0].total_efficiency if raw_res else 0
-                st.session_state.final_result_json = json.dumps(clean_data(final_res), ensure_ascii=False, indent=2)
+                    # 清理临时文件
+                    if os.path.exists(run_ops_path): os.remove(run_ops_path)
+                    if os.path.exists(run_conf_path): os.remove(run_conf_path)
 
-                st.session_state.final_result_ready = True
-                st.session_state.analysis_done = False
-                st.session_state.suggestions = []
+                    status.update(label="✅ 生成成功！", state="complete", expanded=False)
+                    st.toast(f"✅ 已成功应用 {len(modified_names)} 位干员的练度修改！")
 
-                if modified_names:
-                    st.session_state.list_version += 1
+                    time.sleep(0.8)
+                    st.rerun()
 
-                if modified_names:
-                    st.toast(f"✅ 已更新 {len(modified_names)} 位干员练度！", icon="💾")
-                else:
-                    st.toast("✅ 排班生成成功！", icon="📄")
-
-                time.sleep(0.5)
-                st.rerun()
-
-            except Exception as e:
-                st.error(f"计算发生错误: {e}")
-            finally:
-                if os.path.exists(run_ops_path): os.remove(run_ops_path)
-                if os.path.exists(run_conf_path): os.remove(run_conf_path)
+                except Exception as e:
+                    status.update(label="❌ 计算失败", state="error")
+                    st.error(f"发生致命错误: {str(e)}")
