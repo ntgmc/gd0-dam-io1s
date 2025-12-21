@@ -284,7 +284,28 @@ st.markdown("""
 /* 隐藏顶部菜单和页脚 */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
-.stAppHeader {display: none;}
+
+/* 1. 允许 Header 显示但背景透明且高度压缩，确保侧边栏展开按钮可用 */
+.stAppHeader {
+    background-color: transparent !important;
+    height: 0px; /* 压缩高度，不占地方 */
+}
+
+/* 2. 移除原来的 .stAppHeader {display: none;} (请删除那一行) */
+
+/* 3. 强制隐藏右上角的三个点和设置按钮，但保留侧边栏 Chevron */
+[data-testid="stHeader"] > div:first-child {
+    visibility: hidden; /* 隐藏整个头部内容 */
+}
+[data-testid="stSidebarCollapseButton"] {
+    visibility: visible !important; /* 唯独把侧边栏按钮救回来 */
+    background-color: rgba(255,255,255,0.1); /* 给它一点底色方便识别 */
+    border-radius: 50%;
+}
+
+/* 4. 隐藏底部和菜单的其他残留 */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
 
 /* 卡片样式 */
 .user-card {
@@ -434,8 +455,23 @@ def upgrade_operator_in_memory(operators_data, char_id, char_name, target_elite)
     return False, None
 
 
-def clean_data(d):
-    return {k: v for k, v in d.items() if k != 'raw_results'}
+def clean_data(data):
+    """
+    递归清理数据：移除 MAA 不需要的所有效率、原始结果等字段
+    """
+    # 定义需要移除的敏感或冗余字段名
+    REDUNDANT_KEYS = {'raw_results', 'efficiency', 'total_efficiency', 'score'}
+
+    if isinstance(data, dict):
+        return {
+            k: clean_data(v)
+            for k, v in data.items()
+            if k not in REDUNDANT_KEYS
+        }
+    elif isinstance(data, list):
+        return [clean_data(i) for i in data]
+    else:
+        return data
 
 
 # ==========================================
