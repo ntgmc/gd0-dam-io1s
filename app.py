@@ -618,141 +618,134 @@ else:
 
         return unique_list
 
-
     # ==========================================
-    # 3. 练度优化建议 (修复版：响应式列表)
+    # 3 & 4. 练度建议与提交区 (修复重复 ID 问题)
     # ==========================================
     st.markdown("### 🛠️ 练度优化建议")
 
-    # 处理数据
     if not st.session_state.suggestions:
         st.info("✨ 当前练度已满足该配置的理论最优解，无需额外提升。")
     else:
         processed_suggestions = process_suggestions(st.session_state.suggestions)
         num_items = len(processed_suggestions)
 
-        # --- 1. 初始化状态逻辑 ---
-        # 为每个建议项创建一个唯一的标识 Key
+        # 确保 Key 初始化
         for idx in range(num_items):
-            key = f"op_select_{idx}"
-            if key not in st.session_state:
-                st.session_state[key] = False  # 默认不选中
+            k = f"op_sel_{st.session_state.list_version}_{idx}"
+            if k not in st.session_state:
+                st.session_state[k] = False
 
-        # --- 2. 快速操作栏 (不在 Form 内，立即生效) ---
-        c_ctrl1, c_ctrl2, c_msg = st.columns([1, 1, 4])
-        if c_ctrl1.button("✅ 全选", use_container_width=True):
+        # --- 快速操作栏 ---
+        c_ctrl1, c_ctrl2, _ = st.columns([1, 1, 4])
+        # 给控制按钮也加上 key 避免冲突
+        if c_ctrl1.button("✅ 全选", key=f"btn_all_{st.session_state.list_version}"):
             for idx in range(num_items):
-                st.session_state[f"op_select_{idx}"] = True
+                st.session_state[f"op_sel_{st.session_state.list_version}_{idx}"] = True
             st.rerun()
 
-        if c_ctrl2.button("❌ 重置", use_container_width=True):
+        if c_ctrl2.button("❌ 重置", key=f"btn_none_{st.session_state.list_version}"):
             for idx in range(num_items):
-                st.session_state[f"op_select_{idx}"] = False
+                st.session_state[f"op_sel_{st.session_state.list_version}_{idx}"] = False
             st.rerun()
 
-        # --- 3. 渲染列表 (不再被 st.form 包裹，实现即时交互) ---
+        # --- 渲染列表 ---
         selected_indices = []
+        for idx, item in enumerate(processed_suggestions):
+            gain_val = item['gain']
+            is_bundle = item.get('type') == 'bundle'
 
-        # 容器化列表，方便美化
-        list_container = st.container()
-        with list_container:
-            for idx, item in enumerate(processed_suggestions):
-                gain_val = item['gain']
-                is_bundle = item.get('type') == 'bundle'
+            if gain_val >= 20.0:
+                badge_class, icon_str = "eff-badge-legendary", "🔥 极大提升"
+            elif gain_val >= 10.0:
+                badge_class, icon_str = "eff-badge-epic", "✨ 显著提升"
+            else:
+                badge_class, icon_str = "eff-badge-rare", "📈 效率提升"
 
-                # 颜色与等级判断
-                if gain_val >= 20.0:
-                    badge_class, icon_str = "eff-badge-legendary", "🔥 极大提升"
-                elif gain_val >= 10.0:
-                    badge_class, icon_str = "eff-badge-epic", "✨ 显著提升"
+            row = st.columns([0.08, 0.92])
+            with row[0]:
+                st.write("")
+                st.write("")
+                # 勾选框使用带 list_version 的唯一 key
+                cb_key = f"op_sel_{st.session_state.list_version}_{idx}"
+                if st.checkbox("Pick", key=cb_key, label_visibility="collapsed"):
+                    selected_indices.append(idx)
+
+            with row[1]:
+                # 头像与文本处理 (保持原样)
+                if is_bundle:
+                    ops_info = item['ops']
+                    avatars_html = "".join([
+                                               f'<img src="{get_avatar_base64(o.get("id"))}" style="width:38px;height:38px;border-radius:4px;margin-right:3px;border:1px solid #444;">'
+                                               for o in ops_info])
+                    display_name = " + ".join([o['name'] for o in ops_info])
+                    desc_text = " | ".join([f"{o['name']}:精{o['current']}→{o['target']}" for o in ops_info])
                 else:
-                    badge_class, icon_str = "eff-badge-rare", "📈 效率提升"
+                    img_src = get_avatar_base64(item.get('id'))
+                    avatars_html = f'<img src="{img_src}" style="width:45px;height:45px;border-radius:4px;border:1px solid #444;">' if img_src else ""
+                    display_name = item['name']
+                    desc_text = f"当前: 精{item['current']}  ➜  目标: 精{item['target']}"
 
-                # 布局卡片
-                row = st.columns([0.08, 0.92])
-
-                # 勾选框：直接绑定到 session_state
-                with row[0]:
-                    st.write("")  # 居中对齐用
-                    st.write("")
-                    is_checked = st.checkbox(
-                        "Pick",
-                        key=f"op_select_{idx}",  # 关键：直接绑定 Key
-                        label_visibility="collapsed"
-                    )
-                    if is_checked:
-                        selected_indices.append(idx)
-
-                # 信息展示卡片
-                with row[1]:
-                    if is_bundle:
-                        # 组合显示逻辑
-                        ops_info = item['ops']
-                        avatars_html = "".join([
-                            f'<img src="{get_avatar_base64(o.get("id"))}" style="width:38px;height:38px;border-radius:4px;margin-right:3px;border:1px solid #444;">'
-                            for o in ops_info
-                        ])
-                        display_name = " + ".join([o['name'] for o in ops_info])
-                        desc_text = " | ".join([f"{o['name']}:精{o['current']}→{o['target']}" for o in ops_info])
-                    else:
-                        # 单人显示逻辑
-                        img_src = get_avatar_base64(item.get('id'))
-                        avatars_html = f'<img src="{img_src}" style="width:45px;height:45px;border-radius:4px;border:1px solid #444;">' if img_src else ""
-                        display_name = item['name']
-                        desc_text = f"当前: 精{item['current']}  ➜  目标: 精{item['target']}"
-
-                    st.markdown(f"""
-                        <div class="op-card">
-                            <div style="display:flex; align-items:center; flex-grow:1;">
-                                {avatars_html}
-                                <div style="display:flex; flex-direction:column; margin-left:10px;">
-                                    <span class="op-name">{display_name}</span>
-                                    <span class="op-desc">{desc_text}</span>
-                                </div>
-                            </div>
-                            <div class="eff-badge {badge_class}">
-                                {icon_str} +{gain_val:.1f}%
+                st.markdown(f"""
+                    <div class="op-card">
+                        <div style="display:flex; align-items:center; flex-grow:1;">
+                            {avatars_html}
+                            <div style="display:flex; flex-direction:column; margin-left:10px;">
+                                <span class="op-name">{display_name}</span>
+                                <span class="op-desc">{desc_text}</span>
                             </div>
                         </div>
-                        """, unsafe_allow_html=True)
+                        <div class="eff-badge {badge_class}">
+                            {icon_str} +{gain_val:.1f}%
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
-        # --- 4. 提交区域 ---
+        # --- 提交区 ---
         st.divider()
         sticky_cols = st.columns([3, 1])
         with sticky_cols[1]:
-            st.markdown(f"<h4 style='text-align:right; color:#FF4B4B;'>已选 {len(selected_indices)} 项</h4>",
-                        unsafe_allow_html=True)
+            st.markdown(
+                f"<h4 style='text-align:right; color:#FF4B4B; margin-top:5px;'>已选 {len(selected_indices)} 项</h4>",
+                unsafe_allow_html=True)
 
         with sticky_cols[0]:
-            # 将提交按钮放在一个简单的容器内，或者单独作为一个按钮
-            if st.button("🚀 确认修改并生成排班表", type="primary", use_container_width=True):
-                if not selected_indices:
-                    st.warning("请至少勾选一个提升项后再生成。")
-                else:
-                    with st.spinner("正在演算最终结果..."):
-                        # --- 执行生成逻辑 ---
-                        new_ops_data = copy.deepcopy(st.session_state.user_ops)
-                        modified_count = 0
+            # 【修复点】增加唯一 Key，防止 ID 冲突
+            submit_btn = st.button(
+                "🚀 确认修改并生成排班表",
+                type="primary",
+                use_container_width=True,
+                key=f"main_submit_btn_{st.session_state.list_version}"
+            )
 
-                        for idx in selected_indices:
-                            item = processed_suggestions[idx]
-                            if item.get('type') == 'bundle':
-                                for o in item['ops']:
-                                    suc, _ = upgrade_operator_in_memory(new_ops_data, o.get('id'), o.get('name'),
-                                                                        o['target'])
-                                    if suc: modified_count += 1
-                            else:
-                                suc, _ = upgrade_operator_in_memory(new_ops_data, item.get('id'), item.get('name'),
-                                                                    item['target'])
-                                if suc: modified_count += 1
+        # --- 处理逻辑 ---
+        if submit_btn:
+            if not selected_indices:
+                st.warning("⚠️ 请至少勾选一个提升项。")
+            else:
+                with st.status("正在演算并保存...", expanded=False) as status:
+                    new_ops_data = copy.deepcopy(st.session_state.user_ops)
+                    modified_names = []
 
-                        # 保存并重算 (这部分复用你原有的逻辑)
+                    for idx in selected_indices:
+                        item = processed_suggestions[idx]
+                        if item.get('type') == 'bundle':
+                            for o in item['ops']:
+                                suc, name = upgrade_operator_in_memory(new_ops_data, o.get('id'), o.get('name'),
+                                                                       o['target'])
+                                if suc: modified_names.append(name)
+                        else:
+                            suc, name = upgrade_operator_in_memory(new_ops_data, item.get('id'), item.get('name'),
+                                                                   item['target'])
+                            if suc: modified_names.append(name)
+
+                    if modified_names:
                         save_user_data(st.session_state.user_hash, new_ops_data)
                         st.session_state.user_ops = new_ops_data
 
-                        # 重新运行算法生成最终 JSON
-                        run_ops_path = f"run_ops_{st.session_state.user_hash}.json"
-                        run_conf_path = f"run_conf_{st.session_state.user_hash}.json"
+                    # 生成 JSON 逻辑 (复用之前的)
+                    run_ops_path = f"run_ops_{st.session_state.user_hash}.json"
+                    run_conf_path = f"run_conf_{st.session_state.user_hash}.json"
+                    try:
                         with open(run_ops_path, "w", encoding='utf-8') as f:
                             json.dump(new_ops_data, f)
                         with open(run_conf_path, "w", encoding='utf-8') as f:
@@ -761,101 +754,20 @@ else:
                         optimizer = WorkplaceOptimizer("internal", run_ops_path, run_conf_path)
                         final_res = optimizer.get_optimal_assignments(ignore_elite=False)
 
-                        st.session_state.final_eff = final_res.get('raw_results', [None])[
-                            0].total_efficiency if final_res.get('raw_results') else 0
+                        raw_res = final_res.get('raw_results', [])
+                        st.session_state.final_eff = raw_res[0].total_efficiency if raw_res else 0
                         st.session_state.final_result_json = json.dumps(clean_data(final_res), ensure_ascii=False,
                                                                         indent=2)
                         st.session_state.final_result_ready = True
+                        st.session_state.analysis_done = False  # 触发重新分析
+                        st.session_state.list_version += 1  # 关键：改变版本号，下次刷新时所有组件 Key 都会变
 
-                        # 重置状态，准备下一次显示
-                        st.session_state.analysis_done = False
-                        st.toast(f"✅ 成功应用 {modified_count} 项练度修改并生成排班！")
-                        time.sleep(1)
+                        status.update(label="✅ 处理完成！", state="complete")
+                        st.toast(f"已更新 {len(modified_names)} 位干员练度")
+                        time.sleep(0.5)
                         st.rerun()
-
-    # ==========================================
-    # 4. 处理生成逻辑 (适配新的去重列表)
-    # ==========================================
-    # --- 4. 提交区域 (修复 NameError) ---
-    st.divider()
-    sticky_cols = st.columns([3, 1])
-
-    with sticky_cols[1]:
-        # 实时显示已选数量
-        st.markdown(
-            f"<h4 style='text-align:right; color:#FF4B4B; margin-top:5px;'>已选 {len(selected_indices)} 项</h4>",
-            unsafe_allow_html=True)
-
-    with sticky_cols[0]:
-        # 将按钮点击状态赋值给 submit_btn 变量，修复下方的 NameError
-        submit_btn = st.button("🚀 确认修改并生成排班表", type="primary", use_container_width=True)
-
-    # --- 5. 处理生成逻辑 ---
-    if submit_btn:
-        if not selected_indices:
-            st.warning("⚠️ 请至少勾选一个提升项后再生成。")
-        else:
-            with st.status("正在演算最终结果...", expanded=True) as status:
-                try:
-                    # A. 复制当前数据
-                    new_ops_data = copy.deepcopy(st.session_state.user_ops)
-                    modified_names = []
-
-                    # B. 应用选中的修改
-                    for idx in selected_indices:
-                        item = processed_suggestions[idx]
-                        if item.get('type') == 'bundle':
-                            for o in item['ops']:
-                                suc, name = upgrade_operator_in_memory(
-                                    new_ops_data, o.get('id'), o.get('name'), o['target']
-                                )
-                                if suc: modified_names.append(name)
-                        else:
-                            suc, name = upgrade_operator_in_memory(
-                                new_ops_data, item.get('id'), item.get('name'), item['target']
-                            )
-                            if suc: modified_names.append(name)
-
-                    # C. 保存到硬盘
-                    if modified_names:
-                        save_success = save_user_data(st.session_state.user_hash, new_ops_data)
-                        if not save_success:
-                            st.error("保存数据失败，请检查 user_data 文件夹权限")
-                            st.stop()
-                        st.session_state.user_ops = new_ops_data
-
-                    # D. 调用算法生成最终排班 JSON
-                    run_ops_path = f"run_ops_{st.session_state.user_hash}.json"
-                    run_conf_path = f"run_conf_{st.session_state.user_hash}.json"
-
-                    with open(run_ops_path, "w", encoding='utf-8') as f:
-                        json.dump(new_ops_data, f, ensure_ascii=False)
-                    with open(run_conf_path, "w", encoding='utf-8') as f:
-                        json.dump(st.session_state.user_conf, f, ensure_ascii=False)
-
-                    optimizer = WorkplaceOptimizer("internal", run_ops_path, run_conf_path)
-                    final_res = optimizer.get_optimal_assignments(ignore_elite=False)
-
-                    # E. 更新状态
-                    raw_res = final_res.get('raw_results', [])
-                    st.session_state.final_eff = raw_res[0].total_efficiency if raw_res else 0
-                    st.session_state.final_result_json = json.dumps(clean_data(final_res), ensure_ascii=False,
-                                                                    indent=2)
-
-                    st.session_state.final_result_ready = True
-                    st.session_state.analysis_done = False  # 强制下次进入重新分析潜力
-                    st.session_state.list_version += 1  # 刷新列表状态
-
-                    # 清理临时文件
-                    if os.path.exists(run_ops_path): os.remove(run_ops_path)
-                    if os.path.exists(run_conf_path): os.remove(run_conf_path)
-
-                    status.update(label="✅ 生成成功！", state="complete", expanded=False)
-                    st.toast(f"✅ 已成功应用 {len(modified_names)} 位干员的练度修改！")
-
-                    time.sleep(0.8)
-                    st.rerun()
-
-                except Exception as e:
-                    status.update(label="❌ 计算失败", state="error")
-                    st.error(f"发生致命错误: {str(e)}")
+                    except Exception as e:
+                        st.error(f"出错: {e}")
+                    finally:
+                        if os.path.exists(run_ops_path): os.remove(run_ops_path)
+                        if os.path.exists(run_conf_path): os.remove(run_conf_path)
