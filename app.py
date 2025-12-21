@@ -580,7 +580,6 @@ else:
     # ==========================================
     # 3. 练度优化建议 (优化后的交互逻辑)
     # ==========================================
-    st.markdown("### 🛠️ 练度优化建议")
 
     # --- 辅助函数：数据去重与排序（修复版 + 配合本地图库） ---
     def process_suggestions(suggestions):
@@ -619,100 +618,95 @@ else:
 
         return unique_list
 
-    # 辅助说明
-    with st.expander("💡 操作指南", expanded=True):
-        st.markdown("""
-        1. **核对信息**：列表显示了提升哪些干员可以获得更高的基建产出。
-        2. **手动勾选**：请勾选您**已经在游戏中完成精进**、或**准备立即提升**的干员。
-        3. **生成排班**：点击最下方的按钮，系统将根据更新后的练度重新计算并为您生成最新的 `MAA` 排班 JSON 文件。
-        """)
+
+    # ==========================================
+    # 3. 练度优化建议 (修复版：响应式列表)
+    # ==========================================
+    st.markdown("### 🛠️ 练度优化建议")
 
     # 处理数据
     if not st.session_state.suggestions:
         st.info("✨ 当前练度已满足该配置的理论最优解，无需额外提升。")
-        processed_suggestions = []
     else:
         processed_suggestions = process_suggestions(st.session_state.suggestions)
+        num_items = len(processed_suggestions)
 
-        # --- 新增：快速勾选控制 ---
-        c_ctrl1, c_ctrl2, _ = st.columns([1, 1, 4])
+        # --- 1. 初始化状态逻辑 ---
+        # 为每个建议项创建一个唯一的标识 Key
+        for idx in range(num_items):
+            key = f"op_select_{idx}"
+            if key not in st.session_state:
+                st.session_state[key] = False  # 默认不选中
+
+        # --- 2. 快速操作栏 (不在 Form 内，立即生效) ---
+        c_ctrl1, c_ctrl2, c_msg = st.columns([1, 1, 4])
         if c_ctrl1.button("✅ 全选", use_container_width=True):
-            for idx in range(len(processed_suggestions)):
-                st.session_state[f"chk_state_{idx}"] = True
+            for idx in range(num_items):
+                st.session_state[f"op_select_{idx}"] = True
             st.rerun()
+
         if c_ctrl2.button("❌ 重置", use_container_width=True):
-            for idx in range(len(processed_suggestions)):
-                st.session_state[f"chk_state_{idx}"] = False
+            for idx in range(num_items):
+                st.session_state[f"op_select_{idx}"] = False
             st.rerun()
 
-        # --- 表单区域 ---
-        with st.form("upgrade_form"):
-            selected_indices_in_processed = []
+        # --- 3. 渲染列表 (不再被 st.form 包裹，实现即时交互) ---
+        selected_indices = []
 
+        # 容器化列表，方便美化
+        list_container = st.container()
+        with list_container:
             for idx, item in enumerate(processed_suggestions):
                 gain_val = item['gain']
                 is_bundle = item.get('type') == 'bundle'
 
-                # 颜色与文案逻辑 (统一抽取)
+                # 颜色与等级判断
                 if gain_val >= 20.0:
-                    badge_class, icon_str = "eff-badge-legendary", "🔥 极高提升"
+                    badge_class, icon_str = "eff-badge-legendary", "🔥 极大提升"
                 elif gain_val >= 10.0:
                     badge_class, icon_str = "eff-badge-epic", "✨ 显著提升"
                 else:
                     badge_class, icon_str = "eff-badge-rare", "📈 效率提升"
 
-                # 准备显示的渲染内容
-                if is_bundle:
-                    # 组合建议渲染
-                    ops_info = item['ops']
-                    avatars_html = ""
-                    names_text = [o['name'] for o in ops_info]
-                    details_text = [f"{o['name']}: 精{o['current']}→{o['target']}" for o in ops_info]
-                    key_suffix = "_".join([str(o.get('id', '')) for o in ops_info])
+                # 布局卡片
+                row = st.columns([0.08, 0.92])
 
-                    for o in ops_info:
-                        img_src = get_avatar_base64(o.get('id'))
-                        if img_src:
-                            avatars_html += f'<img src="{img_src}" style="width: 35px; height: 35px; border-radius: 4px; margin-right: 2px; border: 1px solid #444;">'
-
-                    display_name = " + ".join(names_text)
-                    desc_text = " | ".join(details_text)
-                else:
-                    # 单人建议渲染
-                    real_id = item.get('id')
-                    img_src = get_avatar_base64(real_id)
-                    if img_src:
-                        avatars_html = f'<img src="{img_src}" style="width: 45px; height: 45px; border-radius: 4px; border: 1px solid #444;">'
-                    else:
-                        avatars_html = f'<div style="width:45px; height:45px; background:#333; border-radius:4px; display:flex; align-items:center; justify-content:center; color:#aaa; font-size:12px;">{item["name"][:1]}</div>'
-
-                    display_name = item['name']
-                    desc_text = f"当前: 精{item['current']}  ➜  目标: 精{item['target']}"
-                    key_suffix = str(real_id)
-
-                # 渲染卡片行
-                row_cols = st.columns([0.08, 0.92])
-                with row_cols[0]:
-                    st.write("")  # 垂直居中对齐
+                # 勾选框：直接绑定到 session_state
+                with row[0]:
+                    st.write("")  # 居中对齐用
                     st.write("")
-                    unique_key = f"chk_val_{idx}_{key_suffix}"
-                    # 使用 session_state 保持的状态，默认设为 False (取消全选)
-                    state_key = f"chk_state_{idx}"
-                    if state_key not in st.session_state:
-                        st.session_state[state_key] = False
-
-                    is_checked = st.checkbox("Pick", value=st.session_state[state_key], key=unique_key,
-                                             label_visibility="collapsed")
+                    is_checked = st.checkbox(
+                        "Pick",
+                        key=f"op_select_{idx}",  # 关键：直接绑定 Key
+                        label_visibility="collapsed"
+                    )
                     if is_checked:
-                        selected_indices_in_processed.append(idx)
+                        selected_indices.append(idx)
 
-                with row_cols[1]:
+                # 信息展示卡片
+                with row[1]:
+                    if is_bundle:
+                        # 组合显示逻辑
+                        ops_info = item['ops']
+                        avatars_html = "".join([
+                            f'<img src="{get_avatar_base64(o.get("id"))}" style="width:38px;height:38px;border-radius:4px;margin-right:3px;border:1px solid #444;">'
+                            for o in ops_info
+                        ])
+                        display_name = " + ".join([o['name'] for o in ops_info])
+                        desc_text = " | ".join([f"{o['name']}:精{o['current']}→{o['target']}" for o in ops_info])
+                    else:
+                        # 单人显示逻辑
+                        img_src = get_avatar_base64(item.get('id'))
+                        avatars_html = f'<img src="{img_src}" style="width:45px;height:45px;border-radius:4px;border:1px solid #444;">' if img_src else ""
+                        display_name = item['name']
+                        desc_text = f"当前: 精{item['current']}  ➜  目标: 精{item['target']}"
+
                     st.markdown(f"""
                         <div class="op-card">
-                            <div style="display:flex; align-items:center; flex-grow:1; overflow:hidden;">
-                                <div style="min-width: 50px;">{avatars_html}</div>
-                                <div style="display:flex; flex-direction:column; margin-left:10px; overflow:hidden;">
-                                    <span class="op-name" style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{display_name}</span>
+                            <div style="display:flex; align-items:center; flex-grow:1;">
+                                {avatars_html}
+                                <div style="display:flex; flex-direction:column; margin-left:10px;">
+                                    <span class="op-name">{display_name}</span>
                                     <span class="op-desc">{desc_text}</span>
                                 </div>
                             </div>
@@ -722,17 +716,62 @@ else:
                         </div>
                         """, unsafe_allow_html=True)
 
-            st.write("")
-            st.warning("⚠️ 注意：点击下方按钮后，勾选的干员将在后台标记为“已升级”，并为您计算全新的排班 JSON。")
+        # --- 4. 提交区域 ---
+        st.divider()
+        sticky_cols = st.columns([3, 1])
+        with sticky_cols[1]:
+            st.markdown(f"<h4 style='text-align:right; color:#FF4B4B;'>已选 {len(selected_indices)} 项</h4>",
+                        unsafe_allow_html=True)
 
-            # 操作按钮
-            c_btn1, c_btn2 = st.columns([3, 1])
-            with c_btn1:
-                submit_btn = st.form_submit_button("🚀 应用选中修改并生成排班", type="primary", use_container_width=True)
-            with c_btn2:
-                st.markdown(
-                    f"<div style='text-align:center; padding-top:10px; color:#aaa;'>已选 {len(selected_indices_in_processed)} 项</div>",
-                    unsafe_allow_html=True)
+        with sticky_cols[0]:
+            # 将提交按钮放在一个简单的容器内，或者单独作为一个按钮
+            if st.button("🚀 确认修改并生成排班表", type="primary", use_container_width=True):
+                if not selected_indices:
+                    st.warning("请至少勾选一个提升项后再生成。")
+                else:
+                    with st.spinner("正在演算最终结果..."):
+                        # --- 执行生成逻辑 ---
+                        new_ops_data = copy.deepcopy(st.session_state.user_ops)
+                        modified_count = 0
+
+                        for idx in selected_indices:
+                            item = processed_suggestions[idx]
+                            if item.get('type') == 'bundle':
+                                for o in item['ops']:
+                                    suc, _ = upgrade_operator_in_memory(new_ops_data, o.get('id'), o.get('name'),
+                                                                        o['target'])
+                                    if suc: modified_count += 1
+                            else:
+                                suc, _ = upgrade_operator_in_memory(new_ops_data, item.get('id'), item.get('name'),
+                                                                    item['target'])
+                                if suc: modified_count += 1
+
+                        # 保存并重算 (这部分复用你原有的逻辑)
+                        save_user_data(st.session_state.user_hash, new_ops_data)
+                        st.session_state.user_ops = new_ops_data
+
+                        # 重新运行算法生成最终 JSON
+                        run_ops_path = f"run_ops_{st.session_state.user_hash}.json"
+                        run_conf_path = f"run_conf_{st.session_state.user_hash}.json"
+                        with open(run_ops_path, "w", encoding='utf-8') as f:
+                            json.dump(new_ops_data, f)
+                        with open(run_conf_path, "w", encoding='utf-8') as f:
+                            json.dump(st.session_state.user_conf, f)
+
+                        optimizer = WorkplaceOptimizer("internal", run_ops_path, run_conf_path)
+                        final_res = optimizer.get_optimal_assignments(ignore_elite=False)
+
+                        st.session_state.final_eff = final_res.get('raw_results', [None])[
+                            0].total_efficiency if final_res.get('raw_results') else 0
+                        st.session_state.final_result_json = json.dumps(clean_data(final_res), ensure_ascii=False,
+                                                                        indent=2)
+                        st.session_state.final_result_ready = True
+
+                        # 重置状态，准备下一次显示
+                        st.session_state.analysis_done = False
+                        st.toast(f"✅ 成功应用 {modified_count} 项练度修改并生成排班！")
+                        time.sleep(1)
+                        st.rerun()
 
     # ==========================================
     # 4. 处理生成逻辑 (适配新的去重列表)
