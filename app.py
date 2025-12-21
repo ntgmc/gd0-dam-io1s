@@ -582,6 +582,43 @@ else:
     # ==========================================
     st.markdown("### 🛠️ 练度优化建议")
 
+    # --- 辅助函数：数据去重与排序（修复版 + 配合本地图库） ---
+    def process_suggestions(suggestions):
+        seen = set()
+        unique_list = []
+
+        # 安全排序
+        sorted_sugg = sorted(suggestions, key=lambda x: x.get('gain', 0), reverse=True)
+
+        for item in sorted_sugg:
+            try:
+                # 补全 ID 信息 (非常重要的一步)
+                if item.get('type') == 'bundle':
+                    for op in item.get('ops', []):
+                        if not op.get('id'):
+                            op['id'] = get_real_id(op)
+                else:
+                    if not item.get('id'):
+                        item['id'] = get_real_id(item)
+
+                # 生成唯一标识符
+                if item.get('type') == 'bundle':
+                    ops = item.get('ops', [])
+                    # 使用 get_real_id 确保万无一失
+                    ids = [str(o.get('id') or o.get('name')) for o in ops]
+                    uid = "bundle_" + "_".join(sorted(ids))
+                else:
+                    ident = item.get('id') or item.get('name')
+                    uid = f"single_{ident}"
+
+                if uid not in seen:
+                    seen.add(uid)
+                    unique_list.append(item)
+            except Exception:
+                continue
+
+        return unique_list
+
     # 辅助说明
     with st.expander("💡 操作指南", expanded=True):
         st.markdown("""
