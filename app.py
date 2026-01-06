@@ -277,7 +277,7 @@ def get_real_id(op_item):
 # 0. 样式与配置
 # ==========================================
 
-st.set_page_config(page_title="MAA 基建排班售后服务", page_icon="💎", layout="wide")
+st.set_page_config(page_title="MAA 基建排班售后服务", page_icon="💎", layout="wide", initial_sidebar_state="expanded")
 
 st.markdown("""
 <style>
@@ -293,14 +293,13 @@ footer {visibility: hidden;}
 
 /* 2. 移除原来的 .stAppHeader {display: none;} (请删除那一行) */
 
-/* 3. 强制隐藏右上角的三个点和设置按钮，但保留侧边栏 Chevron */
+/* 3. 强制隐藏右上角的三个点和设置按钮，并隐藏侧边栏 Chevron 按钮 */
 [data-testid="stHeader"] > div:first-child {
     visibility: hidden; /* 隐藏整个头部内容 */
 }
 [data-testid="stSidebarCollapseButton"] {
-    visibility: visible !important; /* 唯独把侧边栏按钮救回来 */
-    background-color: rgba(255,255,255,0.1); /* 给它一点底色方便识别 */
-    border-radius: 50%;
+    display: none !important; /* 隐藏侧边栏折叠按钮，使其不显示 */
+    /* 或者使用 visibility: hidden !important; */
 }
 
 /* 4. 隐藏底部和菜单的其他残留 */
@@ -396,6 +395,13 @@ div.stButton > button:first-child {
     font-size: 0.85em;
     color: #a0a0a0;
     margin-left: 10px;
+}
+/* 屏蔽右下角 App Creator 头像/个人链接 */
+div[class^="_profileContainer"],
+div[class^="_profilePreview"],
+[data-testid="appCreatorAvatar"] {
+    display: none !important;
+    visibility: hidden !important;
 }
 </style>
 """, unsafe_allow_html=True)
