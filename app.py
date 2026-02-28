@@ -272,17 +272,6 @@ def get_real_id(op_item):
     return None
 
 
-def get_dynamic_secret_key(ops_file_path):
-    """
-    根据临时的 operators.json 文件内容，实时计算秘钥。
-    这样即使用户修改了练度，也能生成匹配的新 Key。
-    """
-    with open(ops_file_path, 'r', encoding='utf-8') as f:
-        ops_content = f.read()
-
-    # 使用 logic 中的内置效率数据 + 当前干员数据生成 Key
-    return secret_encoder.generate_key_for_main(_INTERNAL_EFFICIENCY_DATA, ops_content)
-
 # ==========================================
 # 0. 样式与配置
 # ==========================================
@@ -592,8 +581,8 @@ else:
                     json.dump(st.session_state.user_ops, f)
                 with open(temp_conf_path, "w", encoding='utf-8') as f:
                     json.dump(st.session_state.user_conf, f)
-
-                optimizer = WorkplaceOptimizer("internal", temp_ops_path, temp_conf_path, secret_key=current_key)
+                license_key = st.session_state.user_conf.get('license_key', '')
+                optimizer = WorkplaceOptimizer("internal", temp_ops_path, temp_conf_path, secret_key=license_key)
                 curr = optimizer.get_optimal_assignments(ignore_elite=False)
                 pot = optimizer.get_optimal_assignments(ignore_elite=True)
                 upgrades = optimizer.calculate_upgrade_requirements(curr, pot)
