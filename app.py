@@ -594,6 +594,10 @@ else:
                 # 分析完成后刷新显示
                 st.rerun()
 
+            except PermissionError:
+                status.update(label="⛔ 授权失败", state="error")
+                st.error("密钥验证失败：您的数据文件指纹与授权密钥不匹配。")
+                st.stop()
             except Exception as e:
                 status.update(label="❌ 分析出错", state="error")
                 st.error(f"算法错误: {str(e)}")
