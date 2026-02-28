@@ -1,17 +1,18 @@
 {
-  "layout": "2-4-3",
-  "desc": "243 均衡流 (2赤金/2经验)",
+  "layout": "3-3-3",
+  "desc": "333 搓玉流",
   "product_requirements": {
     "trading_stations": {
-      "LMD": 2
+      "LMD": 2,
+      "Orundum": 1
     },
     "manufacturing_stations": {
       "Pure Gold": 2,
-      "Battle Record": 2
+      "Originium Shard": 1
     }
   },
-  "trading_stations_count": 2,
-  "manufacturing_stations_count": 4,
+  "trading_stations_count": 3,
+  "manufacturing_stations_count": 3,
   "Fiammetta": {
     "enable": true
   },
@@ -23,5 +24,6 @@
       "Pure Gold",
       "LMD"
     ]
-  }
+  },
+  "license_key": "skadi-3445f957-febb43e9"
 }
