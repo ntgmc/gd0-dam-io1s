@@ -6,14 +6,12 @@ import hashlib
 import copy
 import time
 
-# 尝试导入 logic 模块中的版本号，如果 logic.py 里没有定义 VERSION，则使用默认值
 try:
     from logic import WorkplaceOptimizer
     from logic import VERSION as LOGIC_VERSION
 except ImportError:
-    from logic import WorkplaceOptimizer
-
-    LOGIC_VERSION = "1.0.0"
+    st.error("核心组件缺失: logic.py 未找到。")
+    st.stop()
 
 # ==========================================
 # 版本控制配置
@@ -273,6 +271,18 @@ def get_real_id(op_item):
 
     return None
 
+
+def get_dynamic_secret_key(ops_file_path):
+    """
+    根据临时的 operators.json 文件内容，实时计算秘钥。
+    这样即使用户修改了练度，也能生成匹配的新 Key。
+    """
+    with open(ops_file_path, 'r', encoding='utf-8') as f:
+        ops_content = f.read()
+
+    # 使用 logic 中的内置效率数据 + 当前干员数据生成 Key
+    return secret_encoder.generate_key_for_main(_INTERNAL_EFFICIENCY_DATA, ops_content)
+
 # ==========================================
 # 0. 样式与配置
 # ==========================================
@@ -526,6 +536,7 @@ if not st.session_state.auth_status:
                     st.session_state.auth_status = True
                     st.session_state.user_hash = u_hash
                     st.session_state.user_ops = ops
+                    st.session_state.original_ops = copy.deepcopy(ops)
                     st.session_state.user_conf = conf
                     st.toast("✅ 验证成功！", icon="🎉")
                     st.rerun()
@@ -582,8 +593,7 @@ else:
                 with open(temp_conf_path, "w", encoding='utf-8') as f:
                     json.dump(st.session_state.user_conf, f)
 
-                # 调用核心算法
-                optimizer = WorkplaceOptimizer("internal", temp_ops_path, temp_conf_path)
+                optimizer = WorkplaceOptimizer("internal", temp_ops_path, temp_conf_path, secret_key=current_key)
                 curr = optimizer.get_optimal_assignments(ignore_elite=False)
                 pot = optimizer.get_optimal_assignments(ignore_elite=True)
                 upgrades = optimizer.calculate_upgrade_requirements(curr, pot)
@@ -781,35 +791,52 @@ else:
                             if suc: modified_names.append(name)
 
                     if modified_names:
-                        save_user_data(st.session_state.user_hash, new_ops_data)
                         st.session_state.user_ops = new_ops_data
 
-                    # 生成 JSON 逻辑 (复用之前的)
-                    run_ops_path = f"run_ops_{st.session_state.user_hash}.json"
-                    run_conf_path = f"run_conf_{st.session_state.user_hash}.json"
                     try:
-                        with open(run_ops_path, "w", encoding='utf-8') as f:
-                            json.dump(new_ops_data, f)
-                        with open(run_conf_path, "w", encoding='utf-8') as f:
+                        # A. 准备原始环境
+                        if 'original_ops' not in st.session_state:
+                            st.session_state.original_ops = copy.deepcopy(st.session_state.user_ops)
+
+                        # B. 写入原始数据到临时文件
+                        raw_temp_path = f"auth_temp_{st.session_state.user_hash}.json"
+                        with open(raw_temp_path, "w", encoding='utf-8') as f:
+                            json.dump(st.session_state.original_ops, f)
+
+                        with open(temp_conf_path, "w", encoding='utf-8') as f:
                             json.dump(st.session_state.user_conf, f)
 
-                        optimizer = WorkplaceOptimizer("internal", run_ops_path, run_conf_path)
+                        # C. 获取原始 Key
+                        license_key = st.session_state.user_conf.get('license_key', '')
+
+                        # D. 初始化优化器 (使用原始数据 + 原始 Key -> 校验通过)
+                        optimizer = WorkplaceOptimizer("internal", raw_temp_path, temp_conf_path,
+                                                       secret_key=license_key)
+
+                        # E. 【注入】将修改后的数据 (new_ops_data) 注入已授权的实例
+                        optimizer.update_operators_in_memory(new_ops_data)
+
+                        # F. 执行计算
                         final_res = optimizer.get_optimal_assignments(ignore_elite=False)
 
+                        # G. 清理
+                        if os.path.exists(raw_temp_path): os.remove(raw_temp_path)
+
+                        # ... (后续结果处理代码保持不变) ...
                         raw_res = final_res.get('raw_results', [])
                         st.session_state.final_eff = raw_res[0].total_efficiency if raw_res else 0
                         st.session_state.final_result_json = json.dumps(clean_data(final_res), ensure_ascii=False,
                                                                         indent=2)
                         st.session_state.final_result_ready = True
-                        st.session_state.analysis_done = False  # 触发重新分析
-                        st.session_state.list_version += 1  # 关键：改变版本号，下次刷新时所有组件 Key 都会变
+                        st.session_state.analysis_done = False
+                        st.session_state.list_version += 1
 
                         status.update(label="✅ 处理完成！", state="complete")
                         st.toast(f"已更新 {len(modified_names)} 位干员练度")
                         time.sleep(0.5)
                         st.rerun()
+
+                    except PermissionError:
+                        st.error("无法初始化计算核心：原始凭证校验失败。请尝试重新登录。")
                     except Exception as e:
-                        st.error(f"出错: {e}")
-                    finally:
-                        if os.path.exists(run_ops_path): os.remove(run_ops_path)
-                        if os.path.exists(run_conf_path): os.remove(run_conf_path)
+                        st.error(f"演算出错: {e}")
